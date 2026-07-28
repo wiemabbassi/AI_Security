@@ -1,0 +1,42 @@
+policies:
+  - id: P001
+    name: Critical Prompt Injection Block
+    condition: "injection_score >= 0.75"
+    action: BLOCK
+    reason: "High confidence prompt injection attack detected"
+
+  - id: P002
+    name: Jailbreak Attempt Block
+    condition: "jailbreak_score >= 0.70"
+    action: BLOCK
+    reason: "Jailbreak behavior / roleplay bypass pattern identified"
+
+  - id: P003
+    name: Unsafe Harmful Content Block
+    condition: "llama_guard_status == 'UNSAFE'"
+    action: BLOCK
+    reason: "Content flagged unsafe by Llama Guard taxonomy"
+
+  - id: P004
+    name: Anomaly Behavior Review
+    condition: "anomaly_score >= 0.80 or behavioral_alert == True"
+    action: FLAG
+    reason: "Anomalous user session behavior detected"
+
+  - id: P005
+    name: Moderate Risk Flag
+    condition: "risk_score >= 0.50 and risk_score < 0.70"
+    action: FLAG
+    reason: "Moderate risk aggregated score"
+
+  - id: P006
+    name: Default Allow Policy
+    condition: "risk_score < 0.50"
+    action: ALLOW
+    reason: "Prompt passed all security thresholds"
+
+thresholds:
+  injection_threshold: 0.75
+  jailbreak_threshold: 0.70
+  anomaly_threshold: 0.80
+  combined_risk_block_threshold: 0.70
