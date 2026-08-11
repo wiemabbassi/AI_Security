@@ -82,9 +82,9 @@ jobs:
           curl -fsSL https://ollama.ai/install.sh | sh
           ollama serve &
           sleep 10
-          ollama pull llama3.2:latest
-          ollama pull llama-guard3:8b
+          ollama pull llama3.2:1b
         continue-on-error: true   # non-fatal if Ollama pull fails in CI
+
 
       - name: Start Security Gateway
         run: |
@@ -92,6 +92,8 @@ jobs:
           sleep 8
         env:
           REDIS_HOST: localhost
+          OLLAMA_MODEL: llama3.2:1b
+
 
       - name: Run Garak Red-Team Scan (CI probe set)
         run: |
