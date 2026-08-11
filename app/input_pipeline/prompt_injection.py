@@ -2,15 +2,35 @@ import re
 import base64
 from typing import Dict, Any
 
+_ml_injection_pipeline = None
+_ml_injection_attempted = False
+
+def get_ml_injection_pipeline():
+    global _ml_injection_pipeline, _ml_injection_attempted
+    if not _ml_injection_attempted:
+        _ml_injection_attempted = True
+        try:
+            from transformers import pipeline
+            _ml_injection_pipeline = pipeline(
+                "text-classification",
+                model="protectai/deberta-v3-base-prompt-injection-v2",
+                tokenizer="protectai/deberta-v3-base-prompt-injection-v2",
+                top_k=None
+            )
+        except Exception:
+            _ml_injection_pipeline = None
+    return _ml_injection_pipeline
+
+
 class PromptInjectionDetector:
     """
     Multi-layered Prompt Injection Detector:
     1. Base64 & Encoded Payload Decoder
     2. Heuristic Rule Engine (Structural anomalies, system tags)
     3. Regex Pattern Classifier
-    4. Semantic DeBERTa-v3 ML Classifier Simulation
+    4. Fine-tuned DeBERTa-v3 ML Classifier (Hugging Face Transformers)
     """
-    
+
     INJECTION_PATTERNS = [
         r"(?i)ignore\s+(all\s+)?(previous|above)\s+instructions?",
         r"(?i)disregard\s+(all\s+)?guidelines?",
@@ -43,29 +63,55 @@ class PromptInjectionDetector:
         augmented_prompt = self._decode_base64(prompt)
         score = 0.0
         matches = []
-        
+
         # 1. Regex pattern check
         for pattern in self.INJECTION_PATTERNS:
             found = re.findall(pattern, augmented_prompt)
             if found:
                 score += 0.70
                 matches.append(pattern)
-                
+
         # 2. Heuristic checks
         if "[SYSTEM]" in augmented_prompt.upper() or "<|IM_START|>" in augmented_prompt.upper():
             score += 0.50
             matches.append("system_tag_injection")
-            
+
         if "OVERRIDE" in augmented_prompt.upper() or "IGNORE" in augmented_prompt.upper():
             if "PROMPT" in augmented_prompt.upper() or "INSTRUCTION" in augmented_prompt.upper() or "COMMAND" in augmented_prompt.upper():
                 score += 0.50
                 matches.append("override_keyword_combination")
 
+        # 3. Fine-tuned DeBERTa-v3 ML Classifier Inference
+        pipe = get_ml_injection_pipeline()
+        if pipe is not None:
+            try:
+                res = pipe(augmented_prompt[:512])
+                if isinstance(res, list) and len(res) > 0:
+                    scores_dict = {item['label'].upper(): item['score'] for item in res[0]}
+                    ml_score = scores_dict.get("INJECTION", scores_dict.get("LABEL_1", 0.0))
+                    if ml_score > 0.5:
+                        # KEY FIX: ML classifier alone is not sufficient to BLOCK.
+                        # Known issue: DeBERTa-v3 gives false positives on PII-heavy queries
+                        # (structured data like emails/phones confuses the model).
+                        # Require at least one regex/heuristic pattern to reach BLOCK threshold.
+                        # ML-only signals cap at 0.65 (FLAG range), not 0.75+ (BLOCK range).
+                        if len(matches) == 0:
+                            # No structural evidence — ML alone, cap below BLOCK threshold
+                            score = max(score, min(ml_score, 0.65))
+                        else:
+                            # Structural + ML corroboration — full score
+                            score = max(score, ml_score)
+                        matches.append("deberta_v3_ml_classifier")
+            except Exception:
+                pass
+
         final_score = min(1.0, score)
         return {
             "injection_score": round(final_score, 3),
-            "is_injection": final_score >= 0.70 or len(matches) > 0,
+            # is_injection requires score >= 0.70 (not just any match)
+            "is_injection": final_score >= 0.70,
             "patterns_matched": matches
         }
 
 injection_detector = PromptInjectionDetector()
+

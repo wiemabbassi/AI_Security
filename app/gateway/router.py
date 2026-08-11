@@ -53,7 +53,12 @@ async def chat_endpoint(
     api_key = authorization.replace("Bearer ", "") if authorization else "public"
 
     # 1. Rate Limiting Check
-    allowed, remaining, retry_after = rate_limiter.is_allowed(key=f"{user_id}:{api_key}")
+    allowed, remaining, retry_after = rate_limiter.is_allowed(
+        key=f"{user_id}:{api_key}",
+        user_id=user_id,
+        api_key=api_key,
+        client_ip=client_ip
+    )
     if not allowed:
         raise HTTPException(
             status_code=429,
@@ -64,8 +69,11 @@ async def chat_endpoint(
     raw_prompt = request_data.prompt
     clean_prompt = normalizer.normalize(raw_prompt)
     
+    # Retrieve user conversation history for multi-turn escalation tracking
+    session_history = behavioral_analyzer.get_user_prompt_history(user_id)
+
     inj_res = injection_detector.analyze(clean_prompt)
-    jb_res = jailbreak_detector.analyze(clean_prompt)
+    jb_res = jailbreak_detector.analyze(clean_prompt, session_history=session_history)
     masked_prompt, pii_map, pii_count = pii_detector.mask_pii(clean_prompt)
     lg_res = llama_guard.classify(masked_prompt)
     gr_res = guardrails_validator.validate_input(masked_prompt)
@@ -78,8 +86,10 @@ async def chat_endpoint(
     anomaly_res = behavioral_analyzer.analyze_user_behavior(
         user_id=user_id,
         prompt_len=len(clean_prompt),
-        current_risk=inj_res["injection_score"]
+        current_risk=inj_res["injection_score"],
+        prompt_text=clean_prompt
     )
+
     
     agg_risk = risk_scorer.calculate_risk(
         injection_score=inj_res["injection_score"],
@@ -142,9 +152,44 @@ async def chat_endpoint(
 
     # 6. Output Security Pipeline
     out_pii_res = output_pii_scanner.scan(raw_llm_response)
-    leak_res = data_leak_detector.detect_leak(raw_llm_response)
+    leak_res = data_leak_detector.detect_leak(
+        raw_llm_response,
+        system_prompt=llm_router.SYSTEM_PROMPT  # compare against actual system prompt used
+    )
     out_lg_res = llama_guard_output.scan(raw_llm_response)
-    final_out_res = output_guardrails.validate_and_restore(raw_llm_response, pii_map)
+    final_out_res = output_guardrails.validate_and_restore(
+        raw_llm_response,
+        pii_map,
+        context=clean_prompt   # pass original clean prompt as groundedness context
+    )
+
+    # Block if output Llama Guard flags the response as unsafe
+    if out_lg_res.get("status") == "UNSAFE":
+        latency_ms = round((time.time() - start_time) * 1000, 2)
+        metrics_collector.record_request(latency_ms, "BLOCK")
+        event_logger.log({
+            "user_id": user_id,
+            "api_key": api_key,
+            "client_ip": client_ip,
+            "raw_prompt": raw_prompt,
+            "masked_prompt": masked_prompt,
+            "action": "BLOCK_OUTPUT",
+            "risk_score": agg_risk,
+            "injection_score": inj_res["injection_score"],
+            "jailbreak_score": jb_res["jailbreak_score"],
+            "anomaly_score": anomaly_res["anomaly_score"],
+            "llama_guard_status": "UNSAFE_OUTPUT",
+            "raw_response": raw_llm_response,
+            "final_response": None,
+            "metadata": {
+                "reason": f"Output Llama Guard blocked: {out_lg_res.get('category')}",
+                "scan_mode": out_lg_res.get("scan_mode")
+            }
+        })
+        raise HTTPException(
+            status_code=403,
+            detail=f"Response blocked by output safety scan: {out_lg_res.get('category', 'Unsafe content detected')}"
+        )
 
     final_response = final_out_res["final_response"]
     latency_ms = round((time.time() - start_time) * 1000, 2)
@@ -155,6 +200,10 @@ async def chat_endpoint(
         tags.append("pii_masked")
     if lg_res["status"] == "SAFE":
         tags.append("llama_guard_safe")
+    if out_lg_res.get("status") == "SAFE":
+        tags.append("output_llama_guard_safe")
+    if leak_res.get("is_leak"):
+        tags.append("data_leak_detected")
 
     langfuse_tracer.create_trace(
         name="llm_security_inspection",
@@ -187,7 +236,14 @@ async def chat_endpoint(
         "llama_guard_status": lg_res["status"],
         "raw_response": raw_llm_response,
         "final_response": final_response,
-        "metadata": {"policy_id": policy_id, "provider": llm_res["provider"], "pii_masked": pii_count}
+        "metadata": {
+            "policy_id": policy_id,
+            "provider": llm_res["provider"],
+            "pii_masked": pii_count,
+            "output_llama_guard": out_lg_res.get("status"),
+            "data_leak": leak_res.get("is_leak"),
+            "guardrails_issues": final_out_res.get("issues", [])
+        }
     })
     metrics_collector.record_request(latency_ms, action)
 
@@ -199,9 +255,16 @@ async def chat_endpoint(
         security_summary={
             "injection_detected": inj_res["is_injection"],
             "jailbreak_detected": jb_res["is_jailbreak"],
-            "llama_guard_status": lg_res["status"],
+            "llama_guard_input_status": lg_res["status"],
+            "llama_guard_output_status": out_lg_res.get("status", "SAFE"),
             "pii_masked_count": pii_count,
+            "pii_restored_count": final_out_res.get("pii_restored_count", 0),
+            "data_leak_detected": leak_res.get("is_leak", False),
+            "data_leak_score": leak_res.get("leak_score", 0.0),
             "anomaly_flag": anomaly_res["is_anomaly"],
-            "policy_matched": policy_id
+            "policy_matched": policy_id,
+            "guardrails_passed": final_out_res.get("guardrails_passed", False),
+            "guardrails_issues": final_out_res.get("issues", [])
         }
     )
+
