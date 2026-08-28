@@ -241,16 +241,23 @@ def main():
 
     # Pre-flight checks
     if not check_garak_installed():
-        print("❌ Garak not installed. Run: pip install garak")
+        if args.format == "json":
+            print(json.dumps({"error": "Garak not installed", "vulnerabilities_found": 0, "probes_run": []}))
+        else:
+            print("❌ Garak not installed. Run: pip install garak")
         sys.exit(2)
 
     if not check_target_reachable(target_url):
-        print(f"❌ Target not reachable: {target_url}")
+        if args.format == "json":
+            print(json.dumps({"error": f"Target not reachable: {target_url}", "vulnerabilities_found": 0, "probes_run": []}))
+        else:
+            print(f"❌ Target not reachable: {target_url}")
         sys.exit(2)
 
-    print(f"\n🔴 Starting Garak red-team scan")
-    print(f"   Target: {target_url}")
-    print(f"   Probes: {len(probes)}")
+    if args.format != "json":
+        print(f"\n🔴 Starting Garak red-team scan")
+        print(f"   Target: {target_url}")
+        print(f"   Probes: {len(probes)}")
 
     results = run_garak_scan(
         probes=probes,
