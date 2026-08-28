@@ -134,7 +134,63 @@ jobs:
           name: garak-report
           path: reports/
 
-  # ── Job 3: Giskard Vulnerability Scan ───────────────────────────────────────
+  # ── Job 3: Giskard Behaviour Checks (fast, runs on every PR) ─────────────────
+  giskard-checks:
+    name: Giskard Regression Checks (Fast CI Gate)
+    runs-on: ubuntu-latest
+    needs: test
+    # Runs on every push and PR — these are the fast declarative checks
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pandas
+          python -m spacy download en_core_web_sm
+
+      - name: Start Security Gateway
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 8
+        env:
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
+      - name: Run Giskard Checks (Hard-Fail CI Gate)
+        # This step is NOT continue-on-error — any regression blocks the PR
+        run: |
+          python -m pytest tests/test_giskard_scan.py::TestGiskardChecks -v \
+            --junitxml=reports/giskard-checks-report.xml
+        env:
+          REDIS_HOST: localhost
+          GATEWAY_URL: http://localhost:8000
+
+      - name: Upload Giskard Checks Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: giskard-checks-report
+          path: reports/giskard-checks-report.xml
+
+  # ── Job 4: Giskard Full Vulnerability Scan (push only) ────────────────────
   giskard-scan:
     name: Giskard LLM Vulnerability Scan
     runs-on: ubuntu-latest
@@ -151,11 +207,11 @@ jobs:
           cache: pip
 
       - name: Install Giskard
-        run: pip install giskard requests
+        run: pip install giskard requests pandas
 
-      - name: Run Giskard Scan
+      - name: Run Giskard Full Scan
         run: python tests/test_giskard_scan.py
-        continue-on-error: true
+        continue-on-error: true  # full scan can be flaky; checks above are the gate
 
       - name: Upload Giskard Report
         if: always()

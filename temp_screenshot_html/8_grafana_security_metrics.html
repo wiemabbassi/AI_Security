@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace'],
+        },
+        colors: {
+          brand: {
+            50: '#ecfdf5',
+            100: '#d1fae5',
+            500: '#10b981',
+            600: '#059669',
+            700: '#047857',
+            900: '#064e3b',
+          }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+    background: #0e1117;
+    color: #e6edf3;
+  }
+  .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scroll::-webkit-scrollbar-track { background: #161b22; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+</style>
+
+<title>Grafana — Prometheus Security Metrics Dashboard</title>
+</head>
+<body class="bg-[#111217] text-[#d8d9da] p-6 w-[1920px] h-[1080px] overflow-hidden">
+  <!-- Grafana Header -->
+  <div class="flex items-center justify-between border-b border-[#22252b] pb-3 mb-5">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-lg border border-orange-500/40">🛡️</div>
+      <div>
+        <h1 class="text-xl font-bold text-white flex items-center gap-3">
+          AI Security Gateway — Production Threat Telemetry & SLA Dashboard
+          <span class="text-xs px-2 py-0.5 rounded bg-[#22252b] text-emerald-400 font-mono">● SLA Met: 99.98%</span>
+        </h1>
+        <p class="text-xs text-gray-400">Prometheus Security Metrics · Attack Interception Rates · Latency Distribution</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3 text-xs font-mono">
+      <span class="bg-[#181b1f] border border-[#22252b] px-3 py-1 rounded text-gray-300">Time Range: Last 6 Hours</span>
+      <span class="bg-emerald-950 text-emerald-400 border border-emerald-800 px-3 py-1 rounded font-semibold">● 10s Refresh</span>
+    </div>
+  </div>
+
+  <!-- Top Metrics Row -->
+  <div class="grid grid-cols-5 gap-4 mb-5">
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">Inbound Request Rate</div>
+      <div class="text-2xl font-extrabold text-white font-mono">48.2 <span class="text-sm text-gray-400 font-normal">req/s</span></div>
+      <div class="text-[11px] text-emerald-400 font-mono mt-1">Normal Enterprise Volume</div>
+    </div>
+    <div class="bg-[#181b1f] border border-red-950/80 rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-red-400 uppercase tracking-wider font-semibold mb-1">Attacks Blocked (6h)</div>
+      <div class="text-2xl font-extrabold text-red-400 font-mono">1,429</div>
+      <div class="text-[11px] text-red-400 font-mono mt-1">21.4% Threat Block Rate</div>
+    </div>
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">Gateway P95 Latency</div>
+      <div class="text-2xl font-extrabold text-emerald-400 font-mono">320 <span class="text-sm text-gray-400 font-normal">ms</span></div>
+      <div class="text-[11px] text-emerald-400 font-mono mt-1">SLA Target: &lt; 500 ms</div>
+    </div>
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">PII Entities Masked</div>
+      <div class="text-2xl font-extrabold text-purple-400 font-mono">142 <span class="text-sm text-gray-400 font-normal">/ min</span></div>
+      <div class="text-[11px] text-purple-400 font-mono mt-1">100% Cryptographic De-identification</div>
+    </div>
+    <div class="bg-[#181b1f] border border-emerald-950/80 rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-emerald-400 uppercase tracking-wider font-semibold mb-1">Active Critical Alerts</div>
+      <div class="text-2xl font-extrabold text-emerald-400 font-mono">0</div>
+      <div class="text-[11px] text-emerald-400 font-mono mt-1">All Detectors Operational</div>
+    </div>
+  </div>
+
+  <!-- Main Charts Grid -->
+  <div class="grid grid-cols-12 gap-4 h-[750px]">
+    <!-- Panel 1: Throughput Decision Timeseries -->
+    <div class="col-span-8 bg-[#181b1f] border border-[#22252b] rounded-lg p-4 shadow flex flex-col justify-between">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Gateway Decisions Over Time (Prometheus: gateway_requests_total)</h3>
+        <div class="flex gap-3 text-[11px] font-mono">
+          <span class="text-emerald-400">● ALLOW</span>
+          <span class="text-red-400">● BLOCK</span>
+          <span class="text-amber-400">● FLAG</span>
+        </div>
+      </div>
+      <div class="h-80 w-full">
+        <canvas id="grafanaThroughput"></canvas>
+      </div>
+    </div>
+
+    <!-- Panel 2: Threat Vector Distribution -->
+    <div class="col-span-4 bg-[#181b1f] border border-[#22252b] rounded-lg p-4 shadow flex flex-col justify-between">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Intercepted Threat Vectors</h3>
+        <span class="text-[10px] font-mono text-gray-400">N=1,429</span>
+      </div>
+      <div class="h-64 w-full flex items-center justify-center">
+        <canvas id="grafanaThreatPie"></canvas>
+      </div>
+      <div class="border-t border-[#22252b] pt-2 text-[11px] font-mono text-gray-400 space-y-1">
+        <div class="flex justify-between"><span>Prompt Injection:</span> <b class="text-red-400">42%</b></div>
+        <div class="flex justify-between"><span>Jailbreak / Roleplay:</span> <b class="text-orange-400">28%</b></div>
+        <div class="flex justify-between"><span>PII Exfiltration:</span> <b class="text-purple-400">18%</b></div>
+        <div class="flex justify-between"><span>System Prompt Leak:</span> <b class="text-amber-400">12%</b></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const gLabels = ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+    new Chart(document.getElementById('grafanaThroughput'), {
+      type: 'line',
+      data: {
+        labels: gLabels,
+        datasets: [
+          {
+            label: 'ALLOW',
+            data: [35, 41, 38, 45, 42, 48],
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2
+          },
+          {
+            label: 'BLOCK',
+            data: [8, 12, 10, 14, 11, 15],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2
+          },
+          {
+            label: 'FLAG',
+            data: [2, 4, 3, 5, 4, 6],
+            borderColor: '#f59e0b',
+            tension: 0.3,
+            borderWidth: 1.5
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    new Chart(document.getElementById('grafanaThreatPie'), {
+      type: 'pie',
+      data: {
+        labels: ['Prompt Injection', 'Jailbreak', 'PII Exfiltration', 'System Prompt Leak'],
+        datasets: [{
+          data: [42, 28, 18, 12],
+          backgroundColor: ['#ef4444', '#f97316', '#a855f7', '#f59e0b'],
+          borderColor: '#181b1f',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false } }
+      }
+    });
+  </script>
+</body>
+</html>

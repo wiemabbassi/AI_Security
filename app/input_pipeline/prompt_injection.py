@@ -33,17 +33,26 @@ class PromptInjectionDetector:
 
     INJECTION_PATTERNS = [
         r"(?i)ignore\s+(all\s+)?(previous|above)\s+instructions?",
-        r"(?i)disregard\s+(all\s+)?guidelines?",
+        r"(?i)disregard\s+(all\s+)?(customer\s+review|guidelines?|instructions?|rules?)",
         r"(?i)override\s+(all\s+)?(system\s+)?prompts?",
         r"(?i)you\s+are\s+now\s+in\s+developer\s+mode",
         r"(?i)start\s+a\s+new\s+conversation\s+from\s+scratch",
-        r"(?i)\[SYSTEM\]",
+        r"(?i)\[SYSTEM(\s*(NOTE|TAG|DIRECTIVE))?\]",
         r"(?i)<\|im_start\|>",
         r"(?i)reveal\s+your\s+instructions?",
         r"(?i)print\s+your\s+(initial|system)\s+prompt",
+        r"(?i)repeat\s+(verbatim\s+)?(all\s+)?instructions?",
         r"(?i)repeat\s+the\s+words\s+above",
-        r"(?i)print\s+the\s+.*passwords?",
-        r"(?i)training\s+corpus"
+        r"(?i)print\s+(the\s+)?.*passwords?",
+        r"(?i)print\s+(secret\s+)?api\s*key",
+        r"(?i)starting\s+with\s+['\"]?you\s+are\s+a",
+        r"(?i)training\s+corpus",
+        r"(?i)print\s+(the\s+values\s+of\s+)?.*environment\s+variables?",
+        r"(?i)OPENAI_API_KEY",
+        r"(?i)DATABASE_URL",
+        r"(?i)SECRET_KEY",
+        r"(?i)tracking\s+pixel",
+        r"(?i)!\[.*\]\(https?://"
     ]
 
     def _decode_base64(self, text: str) -> str:

@@ -1,0 +1,141 @@
+# Alertmanager Configuration — LLM Security Gateway
+# Path: config/alertmanager.yml
+#
+# Configure ALERTMANAGER_WEBHOOK_URL, SMTP_*, SLACK_WEBHOOK_URL env vars,
+# then mount this file into the alertmanager container.
+#
+# Quick start (Docker):
+#   docker run -p 9093:9093 \
+#     -v $(pwd)/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml \
+#     prom/alertmanager
+
+global:
+  # How long to wait before re-sending a notification for an ongoing alert
+  resolve_timeout: 5m
+
+  # SMTP settings (for email alerts) — configure via env or direct values
+  smtp_smarthost: "smtp.gmail.com:587"
+  smtp_from: "alerts@llm-security-gateway.internal"
+  smtp_auth_username: ""      # set via SMTP_USERNAME env
+  smtp_auth_password: ""      # set via SMTP_PASSWORD env
+  smtp_require_tls: true
+
+# ── Notification templates ────────────────────────────────────────────────────
+templates:
+  - "/etc/alertmanager/templates/*.tmpl"
+
+# ── Routing tree ──────────────────────────────────────────────────────────────
+# Routes alerts to the correct receiver based on severity and team labels.
+route:
+  # Default receiver for all unmatched alerts
+  receiver: "ops-slack"
+
+  # Group alerts by alert name + security team label
+  group_by: ["alertname", "team", "severity"]
+  group_wait: 30s         # wait 30s before sending first notification in a group
+  group_interval: 5m      # wait 5m before sending updated notification for a group
+  repeat_interval: 4h     # re-notify if alert is still firing after 4h
+
+  routes:
+    # Critical security alerts → security team Slack + PagerDuty
+    - match:
+        severity: critical
+        team: security
+      receiver: "security-critical"
+      group_wait: 10s
+      repeat_interval: 30m    # re-alert every 30 min for active attack campaigns
+
+    # Critical platform alerts → ops Slack + PagerDuty
+    - match:
+        severity: critical
+        team: platform
+      receiver: "platform-critical"
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts → Slack only
+    - match:
+        severity: warning
+      receiver: "ops-slack"
+      repeat_interval: 2h
+
+    # Info alerts → Slack (low-noise channel)
+    - match:
+        severity: info
+      receiver: "ops-slack-info"
+      repeat_interval: 24h
+
+# ── Inhibition rules ─────────────────────────────────────────────────────────
+# Suppress warning-level latency alerts when the gateway is fully down
+inhibit_rules:
+  - source_match:
+      alertname: "GatewayDown"
+    target_match_re:
+      alertname: "(HighP95Latency|CriticalP99Latency|GatewayNoTraffic)"
+    equal: ["job"]
+
+# ── Receivers ─────────────────────────────────────────────────────────────────
+receivers:
+
+  # Security team — critical attack alerts
+  - name: "security-critical"
+    slack_configs:
+      - api_url: "${SLACK_SECURITY_WEBHOOK_URL}"
+        channel: "#security-alerts"
+        icon_emoji: ":rotating_light:"
+        title: "[CRITICAL] LLM Gateway Security Alert"
+        text: |
+          *Alert:* {{ .GroupLabels.alertname }}
+          *Severity:* {{ .GroupLabels.severity }}
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Runbook:* {{ .Annotations.runbook }}
+          {{ end }}
+        send_resolved: true
+
+  # Platform team — infrastructure alerts
+  - name: "platform-critical"
+    slack_configs:
+      - api_url: "${SLACK_OPS_WEBHOOK_URL}"
+        channel: "#ops-alerts"
+        icon_emoji: ":fire:"
+        title: "[CRITICAL] LLM Gateway Infrastructure Alert"
+        text: |
+          *Alert:* {{ .GroupLabels.alertname }}
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Runbook:* {{ .Annotations.runbook }}
+          {{ end }}
+        send_resolved: true
+    # Uncomment for email
+    # email_configs:
+    #   - to: "ops-team@company.com"
+    #     headers:
+    #       Subject: "[CRITICAL] LLM Gateway — {{ .GroupLabels.alertname }}"
+
+  # General ops — warnings and non-critical
+  - name: "ops-slack"
+    slack_configs:
+      - api_url: "${SLACK_OPS_WEBHOOK_URL}"
+        channel: "#ops-monitoring"
+        icon_emoji: ":warning:"
+        title: "[{{ .GroupLabels.severity | toUpper }}] LLM Gateway"
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+
+  # Low-noise info channel
+  - name: "ops-slack-info"
+    slack_configs:
+      - api_url: "${SLACK_OPS_WEBHOOK_URL}"
+        channel: "#ops-info"
+        icon_emoji: ":information_source:"
+        title: "[INFO] LLM Gateway"
+        text: |
+          {{ range .Alerts }}{{ .Annotations.summary }}{{ end }}
+        send_resolved: false

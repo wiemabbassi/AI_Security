@@ -29,18 +29,18 @@ class LiteLLMRouter:
         if litellm is not None and not is_sensitive and self.openai_api_key:
             try:
                 response = litellm.completion(
-                    model="gpt-4o-mini",
+                    model=settings.OPENAI_MODEL,
                     messages=[
                         {"role": "system", "content": self.SYSTEM_PROMPT},
                         {"role": "user", "content": prompt}
                     ],
-                    timeout=5.0
+                    timeout=10.0
                 )
                 content = response.choices[0].message.content
                 return {
                     "response": content,
                     "provider": "litellm_openai_cloud",
-                    "model": "gpt-4o-mini",
+                    "model": settings.OPENAI_MODEL,
                     "usage": {
                         "input": response.usage.prompt_tokens,
                         "output": response.usage.completion_tokens,
@@ -61,9 +61,12 @@ class LiteLLMRouter:
                             {"role": "system", "content": self.SYSTEM_PROMPT},
                             {"role": "user", "content": prompt}
                         ],
+                        "options": {
+                            "num_predict": 350
+                        },
                         "stream": False
                     },
-                    timeout=30.0
+                    timeout=180.0
                 )
                 if resp.status_code == 200:
                     res_json = resp.json()
@@ -94,7 +97,7 @@ class LiteLLMRouter:
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "gpt-4o-mini",
+                        "model": settings.OPENAI_MODEL,
                         "messages": [
                             {"role": "system", "content": self.SYSTEM_PROMPT},
                             {"role": "user", "content": prompt}
@@ -107,20 +110,26 @@ class LiteLLMRouter:
                     return {
                         "response": content,
                         "provider": "openai_cloud",
-                        "model": "gpt-4o-mini"
+                        "model": settings.OPENAI_MODEL
                     }
             except Exception:
                 pass
 
         # 4. Gateway Local Security Execution Engine Fallback
+        # NOTE: never echo the prompt back — it may contain masked PII tokens
+        # that would be restored by the output pipeline, leaking real PII.
         return {
-            "response": f"Processed query safely: '{prompt}'. [Executed locally via Security Gateway]",
+            "response": (
+                "Your request has been received and processed securely through the "
+                "LLM Security Gateway. The language model is temporarily unavailable "
+                "(Ollama not reachable). Please ensure Ollama is running and try again."
+            ),
             "provider": "gateway_fallback_engine",
             "model": "local-security-v1",
             "usage": {
                 "input": len(prompt.split()),
-                "output": len(prompt.split()) + 5,
-                "total": len(prompt.split()) * 2 + 5
+                "output": 30,
+                "total": len(prompt.split()) + 30
             }
         }
 

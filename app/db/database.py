@@ -337,6 +337,12 @@ def upsert_user_behavior(user_id: str, request_count: int, blocked_count: int, a
             print(f"[DB] upsert_user_behavior PostgreSQL error: {e}")
     else:
         conn = sqlite3.connect(DB_PATH)
+        # Ensure column exists
+        try:
+            conn.execute("ALTER TABLE user_behavior ADD COLUMN behavior_cluster TEXT DEFAULT 'NORMAL'")
+            conn.commit()
+        except Exception:
+            pass
         conn.execute("""
             INSERT INTO user_behavior (user_id, request_count, blocked_count, avg_risk_score)
             VALUES (?,?,?,?)
@@ -346,5 +352,59 @@ def upsert_user_behavior(user_id: str, request_count: int, blocked_count: int, a
                 avg_risk_score = excluded.avg_risk_score,
                 last_seen      = CURRENT_TIMESTAMP
         """, (user_id, request_count, blocked_count, avg_risk))
+        conn.commit()
+        conn.close()
+
+
+def get_all_user_behaviors() -> List[Dict[str, Any]]:
+    """Fetches all user behavioral profiles for clustering analysis."""
+    init_db()
+    if _USE_POSTGRES:
+        try:
+            conn = _get_pg_conn()
+            cur = conn.cursor(_psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT * FROM user_behavior")
+            rows = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            return rows
+        except Exception as e:
+            print(f"[DB] get_all_user_behaviors error: {e}")
+            return []
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM user_behavior").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+
+def update_user_behavior_cluster(user_id: str, behavior_cluster: str):
+    """Updates the assigned behavior_cluster for a user."""
+    init_db()
+    if _USE_POSTGRES:
+        try:
+            conn = _get_pg_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE user_behavior SET behavior_cluster = %s WHERE user_id = %s",
+                (behavior_cluster, user_id)
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"[DB] update_user_behavior_cluster error: {e}")
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("ALTER TABLE user_behavior ADD COLUMN behavior_cluster TEXT DEFAULT 'NORMAL'")
+            conn.commit()
+        except Exception:
+            pass
+        conn.execute(
+            "UPDATE user_behavior SET behavior_cluster = ? WHERE user_id = ?",
+            (behavior_cluster, user_id)
+        )
         conn.commit()
         conn.close()

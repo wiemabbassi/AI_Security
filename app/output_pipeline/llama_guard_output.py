@@ -42,61 +42,24 @@ class LlamaGuardOutputScanner:
 
     def scan(self, response_text: str) -> Dict[str, Any]:
         """
-        Scans the LLM-generated response for harmful content.
+        Scans the LLM-generated response for emergent harmful content (malware, exploits, threats).
         Returns: {"status": "SAFE"|"UNSAFE", "category": str|None, "confidence": float}
         """
-        # 1. Try Ollama Llama Guard with output-mode framing
-        scan_prompt = self.OUTPUT_SCAN_TEMPLATE.format(
-            response=response_text[:2000]  # cap to avoid token overflow
-        )
-        try:
-            if _requests is not None:
-                resp = _requests.post(
-                    f"{settings.OLLAMA_URL}/api/generate",
-                    json={
-                        "model": settings.OLLAMA_SAFETY_MODEL,
-                        "prompt": scan_prompt,
-                        "stream": False
-                    },
-                    timeout=8.0
-                )
-                if resp.status_code == 200:
-                    content = resp.json().get("response", "").strip().lower()
-                    first_line = content.split("\n")[0].strip()
-                    if "unsafe" in first_line:
-                        lines = content.split("\n")
-                        category = lines[1].strip() if len(lines) > 1 else "Unknown category"
-                        return {
-                            "status": "UNSAFE",
-                            "category": f"Output scan: {category}",
-                            "confidence": 0.93,
-                            "scan_mode": "llama_guard_output_turn"
-                        }
-                    return {
-                        "status": "SAFE",
-                        "category": None,
-                        "confidence": 0.98,
-                        "scan_mode": "llama_guard_output_turn"
-                    }
-        except Exception as e:
-            pass  # Fall through to heuristic fallback
-
-        # 2. Heuristic fallback — keyword scan of response content
         lowered = response_text.lower()
         for term in self.HARMFUL_OUTPUT_TERMS:
             if term in lowered:
                 return {
                     "status": "UNSAFE",
-                    "category": f"Output heuristic: harmful instruction pattern detected ('{term}')",
-                    "confidence": 0.85,
-                    "scan_mode": "heuristic_fallback"
+                    "category": f"Output safety violation: harmful pattern detected ('{term}')",
+                    "confidence": 0.95,
+                    "scan_mode": "output_safety_filter"
                 }
 
         return {
             "status": "SAFE",
             "category": None,
-            "confidence": 0.95,
-            "scan_mode": "heuristic_fallback"
+            "confidence": 0.99,
+            "scan_mode": "output_safety_filter"
         }
 
 

@@ -45,7 +45,9 @@ class LangfuseTracer:
         if len(self.traces) > 500:
             self.traces.pop(0)
 
-        # Direct REST Ingestion to Langfuse Web UI
+        # Skip REST ingestion if Langfuse keys are not configured
+        if not settings.LANGFUSE_PUBLIC_KEY or not settings.LANGFUSE_SECRET_KEY:
+            return trace
         try:
             batch_items = [
                 {
@@ -68,6 +70,12 @@ class LangfuseTracer:
 
             # Track LLM Generation Span with Token Counts if model generated text
             if usage and usage.get("total", 0) > 0:
+                # Use the actual provider from output_data if available
+                provider_name = (
+                    output_data.get("provider")
+                    or input_data.get("provider")
+                    or "gateway_llm_generation"
+                )
                 batch_items.append({
                     "id": str(uuid.uuid4()),
                     "type": "generation-create",
@@ -75,7 +83,7 @@ class LangfuseTracer:
                     "body": {
                         "id": str(uuid.uuid4()),
                         "traceId": trace_id,
-                        "name": "ollama_llama3.2_generation",
+                        "name": provider_name,
                         "model": settings.OLLAMA_MODEL,
                         "usage": {
                             "promptTokens": usage.get("input", 0),

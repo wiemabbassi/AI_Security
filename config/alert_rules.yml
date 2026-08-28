@@ -1,0 +1,97 @@
+### Prometheus Alert Rules — LLM Security Gateway
+### Path: config/alert_rules.yml
+### Loaded by prometheus.yml via rule_files:
+
+groups:
+  - name: llm_security_gateway
+    interval: 1m
+    rules:
+
+      # ── High block rate — active attack or misconfiguration ──────────────────
+      - alert: HighBlockRate
+        expr: >
+          (gateway_requests_blocked_total / gateway_requests_total) > 0.30
+        for: 5m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "High request block rate detected"
+          description: >
+            More than 30% of requests are being blocked
+            (current: {{ printf "%.1f" $value | humanizePercentage }}).
+            Possible active attack campaign or overly strict policy misconfiguration.
+          runbook: "Check /events endpoint and Streamlit security dashboard for attack patterns."
+
+      # ── Sustained high injection score ───────────────────────────────────────
+      - alert: HighAverageInjectionScore
+        expr: >
+          avg_over_time(gateway_block_rate[15m]) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Sustained elevated block rate for 10+ minutes"
+          description: >
+            The 15-minute rolling block rate has been above 20% for 10 minutes.
+            This may indicate a coordinated prompt injection campaign.
+          runbook: "Review Langfuse traces for injection_score trends. Check behavioral analysis alerts."
+
+      # ── P95 latency spike ─────────────────────────────────────────────────────
+      - alert: HighP95Latency
+        expr: gateway_latency_p95_ms > 5000
+        for: 3m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "P95 latency above 5s for 3+ minutes"
+          description: >
+            95th percentile latency is {{ $value }}ms (threshold: 5000ms).
+            Possible detector slowdown (DeBERTa/Llama Guard timeout) or Ollama bottleneck.
+          runbook: "Check Ollama service status and detector latency breakdown in Grafana."
+
+      # ── P99 latency critical ──────────────────────────────────────────────────
+      - alert: CriticalP99Latency
+        expr: gateway_latency_p99_ms > 10000
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "P99 latency above 10s — SLA breach imminent"
+          description: >
+            99th percentile latency is {{ $value }}ms (threshold: 10000ms).
+            Users are experiencing severe slowdowns. Possible service degradation.
+          runbook: "Check Ollama GPU memory, Prometheus metrics, and restart affected services."
+
+      # ── Gateway down ──────────────────────────────────────────────────────────
+      - alert: GatewayDown
+        expr: up{job="llm_security_gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "LLM Security Gateway is unreachable"
+          description: >
+            The /metrics/prometheus endpoint has not responded for 1 minute.
+            The gateway may be crashed or unresponsive.
+          runbook: "Check uvicorn process, restart with: uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+      # ── No requests in 30 minutes (dead queue) ────────────────────────────────
+      - alert: GatewayNoTraffic
+        expr: >
+          increase(gateway_requests_total[30m]) == 0
+          unless up{job="llm_security_gateway"} == 0
+        for: 5m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "No traffic received in 30 minutes"
+          description: >
+            The gateway has received no requests in the last 30 minutes despite being up.
+            This may indicate a routing issue or upstream service failure.
+          runbook: "Check upstream client connectivity and ingress routing."

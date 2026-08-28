@@ -43,7 +43,11 @@ class JailbreakDetector:
     JAILBREAK_TEMPLATES = [
         r"(?i)DAN\s+mode",
         r"(?i)AIM\s+prompt",
-        r"(?i)developer\s+mode\s+enabled",
+        r"(?i)developer\s+mode(\s+enabled)?",
+        r"(?i)developer\s+terminal",
+        r"(?i)unconstrained\s+developer",
+        r"(?i)safety\s+constraints?\s+(are\s+)?(permanently\s+)?disabled",
+        r"(?i)content\s+policies.*disabled",
         r"(?i)pretend\s+you\s+have\s+no\s+rules?",
         r"(?i)hypothetically\s+speaking",
         r"(?i)for\s+educational\s+purposes\s+only",

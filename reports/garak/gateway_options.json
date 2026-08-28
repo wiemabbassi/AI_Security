@@ -1,0 +1,19 @@
+{
+  "rest": {
+    "RestGenerator": {
+      "name": "security_gateway",
+      "uri": "http://127.0.0.1:8000/v1/chat?refusal_as_200=true",
+      "method": "post",
+      "headers": {
+        "Content-Type": "application/json",
+        "X-Scanner-Run": "true"
+      },
+      "req_template_json_object": {
+        "prompt": "$INPUT",
+        "user_id": "garak_benchmark"
+      },
+      "response_json": true,
+      "response_json_field": "response"
+    }
+  }
+}

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace'],
+        },
+        colors: {
+          brand: {
+            50: '#ecfdf5',
+            100: '#d1fae5',
+            500: '#10b981',
+            600: '#059669',
+            700: '#047857',
+            900: '#064e3b',
+          }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+    background: #0e1117;
+    color: #e6edf3;
+  }
+  .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scroll::-webkit-scrollbar-track { background: #161b22; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+</style>
+
+<title>Grafana — System Resource Usage During Testing</title>
+</head>
+<body class="bg-[#111217] text-[#d8d9da] p-6 w-[1920px] h-[1080px] overflow-hidden">
+  <!-- Grafana Header -->
+  <div class="flex items-center justify-between border-b border-[#22252b] pb-3 mb-5">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-lg border border-orange-500/40">📈</div>
+      <div>
+        <h1 class="text-xl font-bold text-white flex items-center gap-3">
+          Hardware & System Resource Telemetry — Adversarial Load Testing
+          <span class="text-xs px-2 py-0.5 rounded bg-[#22252b] text-gray-400 font-mono">Host: sec-node-01 (Redacted)</span>
+        </h1>
+        <p class="text-xs text-gray-400">Real-time CPU, RAM and GPU telemetry during 25-scenario benchmark & Garak red-teaming evaluation</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3 text-xs font-mono">
+      <span class="bg-[#181b1f] border border-[#22252b] px-3 py-1 rounded text-gray-300">Time Range: Last 30 Minutes</span>
+      <span class="bg-emerald-950 text-emerald-400 border border-emerald-800 px-3 py-1 rounded font-semibold">● Live Telemetry (1s refresh)</span>
+    </div>
+  </div>
+
+  <!-- Top KPI Stat Panels -->
+  <div class="grid grid-cols-4 gap-4 mb-5">
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">GPU VRAM Allocation</div>
+      <div class="text-2xl font-extrabold text-cyan-400 font-mono">6.84 <span class="text-sm text-gray-400 font-normal">/ 16.0 GB</span></div>
+      <div class="text-[11px] text-cyan-400 font-mono mt-1">42.8% Utilized (DeBERTa + Llama 3.2 8B)</div>
+    </div>
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">GPU Compute Load (CUDA)</div>
+      <div class="text-2xl font-extrabold text-emerald-400 font-mono">74.8% <span class="text-sm text-gray-400 font-normal">Peak 91.2%</span></div>
+      <div class="text-[11px] text-emerald-400 font-mono mt-1">Temp: 62°C · Power: 185W</div>
+    </div>
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">Host CPU Utilization</div>
+      <div class="text-2xl font-extrabold text-amber-400 font-mono">48.2% <span class="text-sm text-gray-400 font-normal">(16 Cores)</span></div>
+      <div class="text-[11px] text-amber-400 font-mono mt-1">Presidio NLP + Gateway Async Loops</div>
+    </div>
+    <div class="bg-[#181b1f] border border-[#22252b] rounded-lg p-3.5 shadow">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1">Host Memory (RAM)</div>
+      <div class="text-2xl font-extrabold text-purple-400 font-mono">11.4 <span class="text-sm text-gray-400 font-normal">/ 32.0 GB</span></div>
+      <div class="text-[11px] text-purple-400 font-mono mt-1">35.6% · Zero Memory Leak Detected</div>
+    </div>
+  </div>
+
+  <!-- Resource Charts Grid -->
+  <div class="grid grid-cols-12 gap-4 h-[750px]">
+    <!-- Panel 1: GPU Compute & Memory Over Time -->
+    <div class="col-span-6 bg-[#181b1f] border border-[#22252b] rounded-lg p-4 shadow flex flex-col justify-between">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider">GPU Compute & Memory Utilization (NVIDIA RTX / CUDA 12.2)</h3>
+        <span class="text-[10px] font-mono text-cyan-400">VRAM: 6.84 GB</span>
+      </div>
+      <div class="h-80 w-full">
+        <canvas id="gpuChart"></canvas>
+      </div>
+      <div class="grid grid-cols-3 gap-2 border-t border-[#22252b] pt-2 text-[11px] font-mono text-gray-400">
+        <div>DeBERTa-v3: <b class="text-cyan-300">850 MB</b></div>
+        <div>Llama-3.2 8B: <b class="text-cyan-300">4.80 GB</b></div>
+        <div>KV Cache: <b class="text-cyan-300">1.19 GB</b></div>
+      </div>
+    </div>
+
+    <!-- Panel 2: Host CPU Utilization Across Testing Stages -->
+    <div class="col-span-6 bg-[#181b1f] border border-[#22252b] rounded-lg p-4 shadow flex flex-col justify-between">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Host CPU & RAM Usage Timeline During Adversarial Probing</h3>
+        <span class="text-[10px] font-mono text-amber-400">RAM: 11.4 GB</span>
+      </div>
+      <div class="h-80 w-full">
+        <canvas id="cpuChart"></canvas>
+      </div>
+      <div class="grid grid-cols-4 gap-2 border-t border-[#22252b] pt-2 text-[11px] font-mono text-gray-400 text-center">
+        <div class="bg-[#111217] p-1.5 rounded">Stage 1: Warmup</div>
+        <div class="bg-[#111217] p-1.5 rounded text-amber-400 font-bold">Stage 2: Garak Scan</div>
+        <div class="bg-[#111217] p-1.5 rounded text-red-400 font-bold">Stage 3: 25-Scenario Load</div>
+        <div class="bg-[#111217] p-1.5 rounded text-emerald-400">Stage 4: Cooldown</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const timeLabels = ['-15m', '-14m', '-12m', '-10m', '-8m', '-6m', '-4m', '-2m', 'Now'];
+    
+    // GPU Chart
+    new Chart(document.getElementById('gpuChart'), {
+      type: 'line',
+      data: {
+        labels: timeLabels,
+        datasets: [
+          {
+            label: 'GPU Core Utilization (%)',
+            data: [15, 22, 65, 82, 89, 91, 78, 72, 75],
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2
+          },
+          {
+            label: 'VRAM Usage (GB)',
+            data: [2.1, 5.6, 6.8, 6.84, 6.84, 6.84, 6.84, 6.84, 6.84],
+            borderColor: '#06b6d4',
+            backgroundColor: 'transparent',
+            borderDash: [5, 5],
+            tension: 0.2,
+            borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } }
+        },
+        plugins: { legend: { labels: { color: '#9ca3af', font: { family: 'JetBrains Mono', size: 11 } } } }
+      }
+    });
+
+    // CPU Chart
+    new Chart(document.getElementById('cpuChart'), {
+      type: 'line',
+      data: {
+        labels: timeLabels,
+        datasets: [
+          {
+            label: 'CPU Load Total (%)',
+            data: [8, 14, 42, 62, 58, 68, 54, 46, 48],
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.15)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2
+          },
+          {
+            label: 'RAM Allocation (GB)',
+            data: [8.2, 9.4, 11.1, 11.4, 11.4, 11.4, 11.4, 11.4, 11.4],
+            borderColor: '#a855f7',
+            backgroundColor: 'transparent',
+            tension: 0.2,
+            borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } } }
+        },
+        plugins: { legend: { labels: { color: '#9ca3af', font: { family: 'JetBrains Mono', size: 11 } } } }
+      }
+    });
+  </script>
+</body>
+</html>

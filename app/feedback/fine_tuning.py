@@ -111,6 +111,13 @@ class FeedbackFineTuningPipeline:
             status = "QUEUED_OFFLINE"
             print(f"[CELERY] Broker unavailable: {e} — task queued offline")
 
+        # Auto-tune risk scoring weights based on annotated batch
+        try:
+            from app.core_engine.risk_scorer import risk_scorer
+            weight_tune_res = risk_scorer.auto_tune_weights(annotations)
+        except Exception as e:
+            weight_tune_res = {"status": "ERROR", "error": str(e)}
+
         return {
             "status": status,
             "celery_task_id": task_id,
@@ -123,6 +130,7 @@ class FeedbackFineTuningPipeline:
                 "dropout": self.LORA_DROPOUT,
                 "target_modules": self.LORA_TARGET_MODULES,
             },
+            "weight_tuning": weight_tune_res,
             "wandb_enabled": _WANDB_ENABLED,
             "eval_gate_status": "PENDING_BENCHMARK",
         }
@@ -363,15 +371,24 @@ class FeedbackFineTuningPipeline:
         return predictions
 
     def _reference_eval_result(self, reason: str) -> Dict[str, Any]:
-        """Returns documented reference benchmark when live eval can't run."""
+        """
+        Returns a conservative fallback when live eval cannot run.
+        Does NOT return deployment_ready=True — the operator must make that call.
+        The hardcoded precision/recall values have been removed to prevent false guarantees.
+        """
         return {
-            "status": "PASSED",
-            "precision": 0.982,
-            "recall": 0.975,
-            "f1_score": 0.978,
+            "status": "INSUFFICIENT_DATA",
+            "precision": None,
+            "recall": None,
+            "f1_score": None,
             "eval_samples": 0,
-            "benchmark_suite": f"reference_benchmarks ({reason})",
-            "deployment_ready": True,
+            "benchmark_suite": f"insufficient_data ({reason})",
+            "deployment_ready": False,
+            "note": (
+                "Not enough labelled events to run a live eval gate. "
+                "Minimum 10 flagged + labelled events required. "
+                "Accumulate more human annotations via Label Studio before deploying a new adapter."
+            ),
         }
 
 

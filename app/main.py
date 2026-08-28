@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Response
+import os
+from fastapi import FastAPI, Response, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.gateway.router import router as api_router
@@ -20,7 +23,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -30,12 +33,26 @@ def startup_db_init():
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
+# Serve demo UI directly
+DEMO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "demo", "index.html")
+
+@app.get("/demo", response_class=HTMLResponse)
+def get_demo_ui():
+    if os.path.exists(DEMO_PATH):
+        return FileResponse(DEMO_PATH, media_type="text/html")
+    return HTMLResponse("<h1>Demo UI not found</h1>", status_code=404)
+
 @app.get("/")
-def root():
+def root(request: Request):
+    # If opened in a web browser, serve the ChatGPT-like demo interface
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and os.path.exists(DEMO_PATH):
+        return FileResponse(DEMO_PATH, media_type="text/html")
     return {
         "name": settings.APP_NAME,
         "version": settings.VERSION,
         "status": "online",
+        "chat_ui": "/demo",
         "docs": "/docs"
     }
 
@@ -76,10 +93,23 @@ def submit_annotation(annotation: AnnotationRequest):
 
 @app.post("/feedback/retrain")
 def trigger_retraining_job():
+    """
+    Dispatches a LoRA fine-tuning job to Celery and returns immediately.
+    The job runs asynchronously — poll /feedback/retrain/{task_id} for status.
+    """
     flagged = feedback_service.get_flagged_samples()
+    # process_annotation_batch() dispatches to Celery internally and returns metadata+task_id
     job_status = fine_tuning_pipeline.process_annotation_batch(flagged)
-    eval_result = fine_tuning_pipeline.run_eval_gate()
     return {
-        "job": job_status,
-        "eval_gate": eval_result
+        "status": "DISPATCHED",
+        "celery_task_id": job_status.get("celery_task_id"),
+        "annotation_count": job_status.get("annotation_count"),
+        "dvc_dataset_version": job_status.get("dvc_dataset_version"),
+        "note": "Fine-tuning job queued. Eval gate runs inside the Celery task. Check W&B for results.",
     }
+
+
+@app.post("/feedback/push-label-studio")
+def push_to_label_studio(limit: int = 50):
+    """Pushes the latest flagged events to a running Label Studio instance."""
+    return feedback_service.push_to_label_studio(limit=limit)
