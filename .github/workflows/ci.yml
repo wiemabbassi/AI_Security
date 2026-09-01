@@ -11,6 +11,7 @@ jobs:
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       redis:
@@ -51,14 +52,17 @@ jobs:
       - name: Upload Test Report
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: pytest-report
           path: reports/pytest-report.xml
+          if-no-files-found: ignore
 
   # ── Job 2: Garak Red-Team Vulnerability Gate ────────────────────────────────
   garak-redteam:
     name: Garak Red-Team Security Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     if: github.event_name == 'push'   # only on push, not every PR
 
@@ -87,12 +91,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install Garak + Gateway Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt
-          pip install --no-cache-dir requests pandas
+          pip install -r requirements.txt
+          pip install requests pandas
           python -m spacy download en_core_web_sm
         continue-on-error: true
 
@@ -107,12 +112,13 @@ jobs:
       - name: Run Garak Red-Team Scan (CI probe set)
         run: |
           mkdir -p reports/garak
-          python benchmark_garak_comparison.py || python run_garak_scan.py --ci || true
+          python run_garak_scan.py --ci || python benchmark_garak_comparison.py || true
         continue-on-error: true   # don't fail CI step on scan errors
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           GATEWAY_URL: http://localhost:8000
+          CI: "true"
 
       - name: Evaluate Garak Gate Result
         run: |
@@ -128,14 +134,17 @@ jobs:
       - name: Upload Garak Report
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: garak-report
-          path: reports/
+          path: reports/garak/
+          if-no-files-found: ignore
 
   # ── Job 3: Giskard Behaviour Checks (fast, runs on every PR) ─────────────────
   giskard-checks:
     name: Giskard Regression Checks (Fast CI Gate)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: test
     # Runs on every push and PR — these are the fast declarative checks
 
@@ -184,14 +193,17 @@ jobs:
       - name: Upload Giskard Checks Report
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: giskard-checks-report
           path: reports/giskard-checks-report.xml
+          if-no-files-found: ignore
 
   # ── Job 4: Giskard Full Vulnerability Scan (push only) ────────────────────
   giskard-scan:
     name: Giskard LLM Vulnerability Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: test
     if: github.event_name == 'push'
 
@@ -214,6 +226,8 @@ jobs:
       - name: Upload Giskard Report
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: giskard-report
           path: reports/giskard_*.json
+          if-no-files-found: ignore

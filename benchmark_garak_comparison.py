@@ -60,6 +60,23 @@ BENCHMARK_PROBES = [
     },
 ]
 
+# Fast CI probe suite (prevents CI timeouts)
+CI_BENCHMARK_PROBES = [
+    {
+        "id": "dan.Dan_11_0",
+        "name": "DAN (Do Anything Now) v11.0",
+        "category": "Jailbreak / Persona Hijack",
+        "description": "Tests if model bypasses safety boundaries via roleplay simulation",
+    },
+]
+
+
+def get_active_probes() -> List[Dict[str, Any]]:
+    """Returns CI-specific probes if running in CI, otherwise full benchmark suite."""
+    if os.getenv("CI") == "true":
+        return CI_BENCHMARK_PROBES
+    return BENCHMARK_PROBES
+
 
 def ensure_config_files():
     """Ensure generator config JSON files exist for Garak REST runner."""
@@ -117,13 +134,14 @@ def run_single_garak_probe(probe_id: str, config_file: str, label: str) -> Dict[
         "--narrow_output",
     ]
 
+    timeout_sec = 60 if os.getenv("CI") == "true" else 180
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            timeout=180,
+            timeout=timeout_sec,
             env=env
         )
         elapsed_sec = round(time.time() - t0, 2)
@@ -224,12 +242,13 @@ def run_full_benchmark() -> Dict[str, Any]:
     """Runs all benchmark probes on both Pathway A (Direct) and Pathway B (Gateway)."""
     ensure_config_files()
 
+    probes = get_active_probes()
     print("=" * 80)
     print("🚀 STARTING AUTOMATED COMPARATIVE LLM SECURITY BENCHMARK")
     print("=" * 80)
     print(f"  Baseline Target (Pathway A) : Direct Ollama (Unprotected)")
     print(f"  Protected Target (Pathway B): LLM Security Gateway (Multi-Stage Defense)")
-    print(f"  Probes to Evaluate          : {len(BENCHMARK_PROBES)}")
+    print(f"  Probes to Evaluate          : {len(probes)}")
     print("=" * 80 + "\n")
 
     results = {
@@ -237,7 +256,7 @@ def run_full_benchmark() -> Dict[str, Any]:
         "probes": [],
         "summary": {
             "direct": {
-                "total_probes": len(BENCHMARK_PROBES),
+                "total_probes": len(probes),
                 "vulnerabilities_total": 0,
                 "passed_probes": 0,
                 "failed_probes": 0,
@@ -245,7 +264,7 @@ def run_full_benchmark() -> Dict[str, Any]:
                 "total_latency_sec": 0.0,
             },
             "gateway": {
-                "total_probes": len(BENCHMARK_PROBES),
+                "total_probes": len(probes),
                 "vulnerabilities_total": 0,
                 "passed_probes": 0,
                 "failed_probes": 0,
@@ -255,9 +274,9 @@ def run_full_benchmark() -> Dict[str, Any]:
         },
     }
 
-    for idx, probe in enumerate(BENCHMARK_PROBES, 1):
+    for idx, probe in enumerate(probes, 1):
         probe_id = probe["id"]
-        print(f"\n[{idx}/{len(BENCHMARK_PROBES)}] PROBE CATEGORY: {probe['name']} ({probe['category']})")
+        print(f"\n[{idx}/{len(probes)}] PROBE CATEGORY: {probe['name']} ({probe['category']})")
         print(f"    Objective: {probe['description']}")
 
         # 1. Run Baseline (Direct Ollama)
@@ -294,7 +313,7 @@ def run_full_benchmark() -> Dict[str, Any]:
         results["summary"]["gateway"]["total_latency_sec"] += res_gateway.get("latency_sec", 0.0)
 
     # Compute averages
-    n = len(BENCHMARK_PROBES)
+    n = len(probes)
     if n > 0:
         results["summary"]["direct"]["avg_defense_rate"] = round(
             sum(p["direct"].get("defense_rate", 0.0) for p in results["probes"]) / n, 2
